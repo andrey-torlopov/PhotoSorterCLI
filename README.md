@@ -1,4 +1,37 @@
-# 📸 Photos Sorter CLI
+<div align="center">
+  <img src="Docs/banner.png" alt="Photos Sorter CLI Banner" width="100%">
+  
+  <h1>Photos Sorter CLI</h1>
+  
+  <p>
+    <strong>Interactive Swift CLI for sorting, fixing, and organizing photo and video libraries on macOS.</strong>
+  </p>
+  
+  <p>
+    <a href="#-what-problem-it-solves">What Problem It Solves</a> •
+    <a href="#-safety-first">Safety First</a> •
+    <a href="#-features">Features</a> •
+    <a href="#-installation">Installation</a> •
+    <a href="#-quick-start">Quick Start</a> •
+    <a href="#-documentation">Documentation</a> •
+    <a href="#-license">License</a> •
+    <a href="#-support">Support</a>
+  </p>
+  
+  <p>
+    <img src="https://img.shields.io/badge/Platform-macOS%2015.0+-blue.svg" alt="Platform">
+    <img src="https://img.shields.io/badge/Swift-6.1+-orange.svg" alt="Swift">
+    <img src="https://img.shields.io/badge/Xcode-16.0+-blue.svg" alt="Xcode">
+    <img src="https://img.shields.io/badge/CLI-Interactive-green.svg" alt="CLI">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
+  </p>
+  
+  <p>
+    <a href="README-ru.md">Русская версия</a>
+  </p>
+</div>
+
+---
 
 Photos Sorter CLI is an interactive macOS terminal tool that helps tame growing photo archives: sort media into structured folders, fix or set metadata dates, validate file naming, and convert DNG/PNG images to HEIC.
 
