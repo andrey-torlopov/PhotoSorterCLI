@@ -54,10 +54,17 @@ The menu includes six core operations:
 
 ## Safety Checklist
 
-- Keep backups or work on copies when trying new combinations of options.
-- Review log output for warning or error messages after each run.
-- Do not enable “delete originals” on the first pass; validate results first.
-- Iterate on small subsets until the output is exactly what you expect.
+Before touching your entire archive, rehearse the workflow on a small, representative folder:
+
+1. Run the CLI on that sample set.
+2. Check where each file ended up, confirm creation/modification dates and metadata are correct, and open a few conversions to inspect quality.
+3. If everything looks right, repeat the process on progressively larger batches until you are ready for the full library.
+
+Additional guardrails:
+
+- Keep backups or work on copies, especially when enabling deletion of originals.
+- Review log output for warnings or errors after every run.
+- Disable destructive options on early passes; only enable them when you are confident in the outcome.
 
 ## Troubleshooting
 
