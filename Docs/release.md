@@ -65,6 +65,8 @@ Run each stage after reviewing its predecessor's result and obtaining the applic
 
 ## SwiftPM compatibility search path
 
+Release builds explicitly select SwiftPM's `native` backend. With Apple Swift 6.4.2 and macOS SDK 27.2, the default `swiftbuild` backend also injects a compatibility rpath into the mounted Metal Toolchain. That path is machine-specific and fails the existing distribution validator. The native backend is still available in this toolchain (marked deprecated); it uses the selected Swift compiler's compatibility path. Future toolchain updates must repeat the build/dependency checks rather than silently accepting a new runtime path.
+
 With the verified Apple Swift 6.4.2 toolchain, SwiftPM adds an absolute `LC_RPATH` to its `usr/lib/swift-6.2/macosx` directory even when the executable does not load `libswiftCompatibilitySpan.dylib`. Both build backends were observed to do this; driver stdlib-rpath flags do not remove the explicit linker argument.
 
 Before merging slices, `build` records each slice's actual dependencies and load commands. It removes only that exact compatibility directory from the selected compiler's toolchain, and only when **every** library load is an absolute `/usr/lib/` or `/System/Library/` path. An `@rpath` dependency, another non-system library or an unknown search path stops the build. No library is silently discarded or replaced. The script then restores the local ad-hoc signature invalidated by `install_name_tool`, records the after-state and verifies that library loads are unchanged. The final validator still rejects all non-system runtime paths.

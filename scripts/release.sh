@@ -204,7 +204,7 @@ case "$stage" in
             build_args=(--package-path "$release_dir/source" --scratch-path "$release_dir/build-$slice"
                 --cache-path "$release_dir/cache" --config-path "$release_dir/config" --security-path "$release_dir/security"
                 --disable-dependency-cache --force-resolved-versions
-                --configuration release --triple "$slice-apple-macosx15.0" --product photos-sorter-cli --disable-local-rpath)
+                --build-system native --configuration release --triple "$slice-apple-macosx15.0" --product photos-sorter-cli --disable-local-rpath)
             swift build "${build_args[@]}" 2>&1 | tee "$release_dir/logs/build-$slice.log"
             bin_dir="$(swift build "${build_args[@]}" --show-bin-path)"
             cp "$bin_dir/photos-sorter-cli" "$release_dir/slices/photos-sorter-cli-$slice"
