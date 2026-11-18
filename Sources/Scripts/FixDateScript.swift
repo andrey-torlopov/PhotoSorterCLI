@@ -1,84 +1,47 @@
 import Foundation
 import PhotoSorterCore
 
-/// Fixing file dates.
-class FixDateScript {
+final class FixDateScript {
+    private let inputDialog: InputDialog
+    private let fixDateTool = FixDateTool(commandExecutor: CLICommandExecutor())
+    private let checkFilesProvider = CheckFilesProvider()
 
-    let fixDateTool = FixDateTool()
-    let checkFilesProvider = CheckFilesProvider()
+    init(inputDialog: InputDialog = InputDialog()) { self.inputDialog = inputDialog }
 
-    func runFixDate() async {
-        let inputFolder = InputDialog().requestPath(text: "Enter the folder path")
-        let startDate = CFAbsoluteTimeGetCurrent()
-        let folderURL = URL(fileURLWithPath: inputFolder)
-
+    func runFixDate() async throws {
+        let text = inputDialog.localization
+        let inputFolder = try inputDialog.requestPath(text: text(.folderPrompt))
+        let started = CFAbsoluteTimeGetCurrent()
         do {
-            try fixDateTool.fixDatesIn(folderURL: folderURL, errorHandler: { error in
-                self.handleFixDateError(error)
-            })
-            let delta = CFAbsoluteTimeGetCurrent() - startDate
-            print(String(format: "✅ Date fixing completed. Time: %.2f seconds.", delta))
+            try fixDateTool.fixDatesIn(folderURL: URL(fileURLWithPath: inputFolder)) {
+                self.inputDialog.writeLine(CoreMessages(text: text).fixDate($0))
+            }
+            inputDialog.writeLine(text(.dateFinished, CFAbsoluteTimeGetCurrent() - started))
         } catch {
-            print("🔴 Critical error: \(error)")
+            inputDialog.writeLine(CoreMessages(text: text).failure(error))
         }
     }
 
-    func runForceSetDate() {
-        let inputPath = InputDialog().requestPath(text: "Enter the folder path")
-        let folderURL = URL(fileURLWithPath: inputPath)
-        let inputDate = InputDialog().requestDate(text: "Enter the date you want to set for the files")
-        let startDate = CFAbsoluteTimeGetCurrent()
-
+    func runForceSetDate() throws {
+        let text = inputDialog.localization
+        let inputPath = try inputDialog.requestPath(text: text(.folderPrompt))
+        let inputDate = try inputDialog.requestDate(text: text(.forceDatePrompt))
+        let started = CFAbsoluteTimeGetCurrent()
         do {
-            try fixDateTool.forceSetDate(with: inputDate, forFolder: folderURL, errorHandler: { error in
-                self.handleFixDateError(error)
-            })
-            let delta = CFAbsoluteTimeGetCurrent() - startDate
-            print(String(format: "✅ Date fixing completed. Time: %.2f seconds.", delta))
+            try fixDateTool.forceSetDate(with: inputDate, forFolder: URL(fileURLWithPath: inputPath)) {
+                self.inputDialog.writeLine(CoreMessages(text: text).fixDate($0))
+            }
+            inputDialog.writeLine(text(.dateFinished, CFAbsoluteTimeGetCurrent() - started))
         } catch {
-            print("🔴 Critical error: \(error)")
+            inputDialog.writeLine(CoreMessages(text: text).failure(error))
         }
     }
 
-    func runCheckValidDateAndName() async {
-        let inputPath = InputDialog().requestPath(text: "Enter the folder path")
-        let folderURL = URL(fileURLWithPath: inputPath)
-        await checkFilesProvider.checkFiles(in: folderURL, stateHandler: processCheckState)
-    }
-
-    private func processCheckState(_ state: CheckFilesProviderState) {
-        switch state {
-        case .unableToAccessSecurityScopedResource:
-            print("❌ Unable to access security-scoped resource.")
-        case .cantOpenFolder:
-            print("❌ Could not open the folder.")
-        case .taskCancelled:
-            print("...Task cancelled.")
-        case .processedFilesCount(let count):
-            print("📊 Files processed so far: \(count)")
-        case .fileNameDoesNotMatchDate(let filePath, let fileDate):
-            print("❌ File name does not match date for file \(filePath). Expected date: \(fileDate ?? "no date")")
-        case .processedFilesResult(let count):
-            print("✅ All files processed. Total files: \(count)")
-        }
-    }
-
-    private func handleFixDateError(_ error: FixDateError) {
-        switch error {
-        case .securityScopedResourceAccessFailed:
-            print("❌ Unable to access security-scoped resource")
-        case .cancelled:
-            print("...Task cancelled")
-        case .folderNotAccessible(let path):
-            print("❌ Could not open folder at path: \(path)")
-        case .dateUpdateFailed(let fileURL, let reason):
-            print("❌ Failed to update date for \(fileURL.path): \(reason)")
-        case .cantFixDate(let fileURL, let reason):
-            print("❌ Unable to fix date for \(fileURL.path): \(reason)")
-        case .metadataError(let filePath, let errorText):
-            print("❌ Metadata error for \(filePath): \(errorText)")
-        case .creationDateSetFailed(let reason):
-            print("❌ Creation date set failed: \(reason)")
+    func runCheckValidDateAndName() async throws {
+        let text = inputDialog.localization
+        let inputPath = try inputDialog.requestPath(text: text(.folderPrompt))
+        await checkFilesProvider.checkFiles(in: URL(fileURLWithPath: inputPath)) {
+            self.inputDialog.writeLine(CoreMessages(text: text).check($0))
         }
     }
 }

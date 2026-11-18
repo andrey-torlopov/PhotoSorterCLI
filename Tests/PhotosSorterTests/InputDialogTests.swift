@@ -1,67 +1,66 @@
-import Testing
 import Foundation
-import PhotoSorterCore
+import Testing
 @testable import PhotosSorter
 
-/// Tests for InputDialog class
-/// Note: These tests focus on testable logic. Interactive methods (requestYesNo, requestPath, requestString)
-/// that depend on readLine() are difficult to unit test and should be tested through integration tests.
-struct InputDialogTests {
+final class TerminalFixture {
+    private var lines: [String]
+    private(set) var output = ""
+    private(set) var readCount = 0
 
-    @Test("InputDialog initializes successfully")
-    func testInitialization() {
-        let dialog = InputDialog()
-        _ = dialog
-        #expect(Bool(true))
-    }
+    init(_ lines: [String] = []) { self.lines = lines }
 
-    @Test("Date parsing with sanitizeDateInput removes invalid characters")
-    func testSanitizeDateInput() throws {
-        let dialog = TestableInputDialog()
-
-        // Test removing special characters
-        #expect(dialog.testSanitizeDateInput("12.03.2024 14:30") == "12.03.2024 14:30")
-        #expect(dialog.testSanitizeDateInput("12/03/2024") == "12032024")
-        #expect(dialog.testSanitizeDateInput("2024-03-12") == "2024-03-12")
-        #expect(dialog.testSanitizeDateInput("12.03.2024@14:30") == "12.03.202414:30")
-        #expect(dialog.testSanitizeDateInput("abc123def") == "123")
-        #expect(dialog.testSanitizeDateInput("!@#$%^&*()") == "")
-    }
-
-    @Test("Date parsing handles various formats")
-    func testDateParsing() {
-        let dialog = TestableInputDialog()
-
-        // Test valid date formats
-        let testCases: [(input: String, shouldParse: Bool)] = [
-            ("2024-03-12 14:30", true),
-            ("2024-03-12", true),
-            ("12.03.2024 14:30", true),
-            ("12.03.2024", true),
-            ("invalid date", false),
-            ("", false)
-        ]
-
-        for testCase in testCases {
-            let sanitized = dialog.testSanitizeDateInput(testCase.input)
-            // We can't directly test requestDate since it depends on readLine()
-            // but we can verify sanitization works correctly
-            #expect(!sanitized.contains(where: { char in
-                !CharacterSet(charactersIn: "0123456789.-: ").contains(char.unicodeScalars.first!)
-            }))
-        }
+    func dialog(validatePath: @escaping (URL) -> Bool = { _ in true }) -> InputDialog {
+        InputDialog(readInput: {
+            self.readCount += 1
+            return self.lines.isEmpty ? nil : self.lines.removeFirst()
+        }, writeOutput: { self.output += $0 }, validatePath: validatePath)
     }
 }
 
-/// Testable version of InputDialog that exposes private methods for testing
-class TestableInputDialog: InputDialog {
-
-    /// Exposes the private sanitizeDateInput method for testing
-    func testSanitizeDateInput(_ input: String) -> String {
-        let allowedCharacters = CharacterSet(charactersIn: "0123456789.-: ")
-        return input.filter { char in
-            guard let scalar = char.unicodeScalars.first else { return false }
-            return allowedCharacters.contains(scalar)
+struct InputDialogTests {
+    @Test("EOF never confirms a question or retries indefinitely")
+    func eofYesNo() {
+        let terminal = TerminalFixture()
+        #expect(throws: InputError.endOfInput) {
+            try terminal.dialog().requestYesNo(text: "Delete?", defaultYes: true)
         }
+        #expect(terminal.readCount == 1)
+    }
+
+    @Test("EOF propagates from every input kind")
+    func eofInputs() {
+        #expect(throws: InputError.endOfInput) { try TerminalFixture().dialog().requestPath(text: "Folder") }
+        #expect(throws: InputError.endOfInput) { try TerminalFixture().dialog().requestDate(text: "Date") }
+        #expect(throws: InputError.endOfInput) { try TerminalFixture().dialog().requestString(text: "Text") }
+        #expect(throws: InputError.endOfInput) {
+            try TerminalFixture(["invalid date"]).dialog().requestDate(text: "Date")
+        }
+    }
+
+    @Test("Invalid answer retries and empty answer respects the configured default")
+    func answers() throws {
+        let terminal = TerminalFixture(["maybe", ""])
+        #expect(try terminal.dialog().requestYesNo(text: "Delete?", defaultYes: false) == false)
+        #expect(terminal.readCount == 2)
+        #expect(terminal.output.contains("Invalid input"))
+        #expect(try TerminalFixture(["Y"]).dialog().requestYesNo(text: "Continue?") == true)
+    }
+
+    @Test("Paths keep spaces and Unicode; an empty path is not the current directory")
+    func paths() throws {
+        let path = "/tmp/Фото family"
+        let terminal = TerminalFixture(["", "/missing", path])
+        #expect(try terminal.dialog(validatePath: { $0.path == path }).requestPath(text: "Folder") == path)
+        #expect(terminal.readCount == 3)
+    }
+
+    @Test("Custom date input reaches the actual date parser unchanged")
+    func customDate() throws {
+        let terminal = TerminalFixture(["day=12 month=03 year=2024", "'day='dd 'month='MM 'year='yyyy"])
+        let result = try terminal.dialog().requestDate(text: "Date")
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: result)
+        #expect(components.year == 2024)
+        #expect(components.month == 3)
+        #expect(components.day == 12)
     }
 }

@@ -21,7 +21,6 @@
   <p>
     <img src="https://img.shields.io/badge/Platform-macOS%2015.0+-blue.svg" alt="Platform">
     <img src="https://img.shields.io/badge/Swift-6.1+-orange.svg" alt="Swift">
-    <img src="https://img.shields.io/badge/Xcode-16.0+-blue.svg" alt="Xcode">
     <img src="https://img.shields.io/badge/CLI-Interactive-green.svg" alt="CLI">
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
   </p>
@@ -54,20 +53,34 @@ Rushing straight into a full archive risks irreversible changes. Take the time t
 - Converts DNG and PNG collections to HEIC with optional deletion of the originals.
 - Provides verbose progress and error logging for auditing.
 
-## 🛠️ Installation
+## 🛠️ Installation and updates
 
-1. Download the signed installer: [photos-sorter-cli.pkg](dist/photos-sorter-cli.pkg)  
-   Replace the link with your hosted location (for example, GitHub Releases) if distributing publicly.
-2. Open the `.pkg` file and follow the installer steps.
-3. After installation, `photos-sorter-cli` is available via Terminal.
+Requires **macOS 15.0 or newer**. A packaged installation does not require Swift or Xcode.
+
+1. Open [GitHub Releases](https://github.com/andrey-torlopov/PhotoSorterCLI/releases/latest) and select a published version. The first release targets Apple Silicon (arm64) only; installers are named `photos-sorter-cli-1.0.0-arm64.pkg`. Intel support is not currently claimed. Check the release notes for tested machines. Version 1.0.0 displays its version in the menu and supports English/Russian language selection.
+2. Download the PKG and `SHA256SUMS`. Run `shasum -a 256 -c SHA256SUMS` in the download directory, then open the PKG. Report validation failures instead of disabling Gatekeeper.
+3. Run `photos-sorter-cli --version` and compare it with the selected release. The executable is installed at `/usr/local/bin/photos-sorter-cli`.
+4. To update, install a newer PKG over the existing version and check `--version` again. The installer does not change photo libraries. If the command is not found, use the full path or ensure `/usr/local/bin` is in `PATH`.
+
+To remove only the executable: `sudo rm /usr/local/bin/photos-sorter-cli`. This leaves photos, user directories, and the installer receipt untouched.
+
+Maintainers: see [build and release instructions](Docs/release.md). The historical file under `dist/` is not a recommended installation source.
 
 ## 🚀 Quick Start
 
 ```bash
+photos-sorter-cli --help
+photos-sorter-cli --version
 photos-sorter-cli
 ```
 
 Use the interactive menu to pick the desired action, supply source/destination folders, and fine-tune options.
+
+Press Ctrl-D at any input prompt to exit. Deletion of originals defaults to off: an empty answer preserves files. Unsupported arguments exit with status 64 without processing anything.
+
+Use `photos-sorter-cli --language en` or `--language ru` (`--lang` also works). Without the flag, language follows `LC_ALL` > `LC_MESSAGES` > `LANG`, then supported macOS language, then English. Unsupported explicit locales use English. Both `yes/no` and `да/нет` are accepted; the choice is not saved. See the [language rules](Docs/usage-en.md#interface-language).
+
+Choose **7 — Language / Язык** in the main menu, then **1 — English** or **2 — Русский**. The header shows `v.1.0.0`; language changes apply immediately until you exit.
 
 ## 📚 Documentation
 

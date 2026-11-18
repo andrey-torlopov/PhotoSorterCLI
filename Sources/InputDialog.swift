@@ -1,98 +1,77 @@
 import Foundation
 import PhotoSorterCore
 
-/// Input dialogs for console interface
-class InputDialog {
+enum InputError: Error, Equatable {
+    case endOfInput
+}
+
+/// Terminal adapter: EOF is cancellation, never a retry or a default answer.
+final class InputDialog {
+    private(set) var localization: CLILocalization
     private let dateFormattingService = DateFormattingService.shared
+    private let readInput: () -> String?
+    private let writeOutput: (String) -> Void
+    private let validatePath: (URL) -> Bool
 
-    init() {}
+    init(
+        language: CLILanguage = .en,
+        readInput: @escaping () -> String? = { readLine(strippingNewline: true) },
+        writeOutput: @escaping (String) -> Void = { print($0, terminator: "") },
+        validatePath: @escaping (URL) -> Bool = { PathValidator.validate($0) }
+    ) {
+        self.localization = CLILocalization(language: language)
+        self.readInput = readInput
+        self.writeOutput = writeOutput
+        self.validatePath = validatePath
+    }
 
-    func requestYesNo(text: String, defaultYes: Bool = true) -> Bool {
+    func use(language: CLILanguage) { localization = CLILocalization(language: language) }
+
+    func writeLine(_ message: String) { writeOutput(message + "\n") }
+
+    private func readRequiredLine() throws -> String {
+        guard let line = readInput() else { throw InputError.endOfInput }
+        return line
+    }
+
+    func requestYesNo(text: String, defaultYes: Bool = true) throws -> Bool {
         while true {
-            print("\(text) \(defaultYes ?"(Y/n)" : "(y/N)"):", terminator: "")
-            if let input = readLine(strippingNewline: true)?.lowercased() {
-                if input == "y" || (input.isEmpty && defaultYes) {
-                    return true
-                } else if input == "n" || (input.isEmpty && !defaultYes) {
-                    return false
-                } else {
-                    print("Invalid input. Please enter Y or n.")
-                }
-            } else {
-                print("Input error. Please try again.")
-            }
+            writeOutput("\(text) \(localization(defaultYes ? .yesDefault : .noDefault)): ")
+            let input = try readRequiredLine().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if ["y", "yes", "д", "да"].contains(input) || (input.isEmpty && defaultYes) { return true }
+            if ["n", "no", "н", "нет"].contains(input) || (input.isEmpty && !defaultYes) { return false }
+            writeLine(localization(.invalidAnswer))
         }
     }
 
-    func requestPath(text: String) -> String {
+    func requestPath(text: String) throws -> String {
         while true {
-            print("\(text): ", terminator: "")
-            if let inputPath = readLine(strippingNewline: true) {
-                let inputURL = URL(fileURLWithPath: inputPath)
-                if PathValidator.validate(inputURL) {
-                    return inputPath
-                } else {
-                    print("Invalid path. Please try again.")
-                }
-            } else {
-                print("Input error. Please try again.")
-            }
+            writeOutput("\(text): ")
+            let path = try readRequiredLine()
+            if !path.isEmpty && validatePath(URL(fileURLWithPath: path)) { return path }
+            writeLine(localization(.invalidPath))
         }
     }
 
-    func requestDate(text: String) -> Date {
+    func requestDate(text: String) throws -> Date {
         let predefinedFormats: [DateFormattingService.Format] = [
             .yyyyMMddHHmm, .yyyyMMdd, .ddMMyyyyHHmm, .ddMMyyyy
         ]
-
         while true {
-            print("\(text): ", terminator: "")
-            if let inputStringDate = readLine(strippingNewline: true) {
-                // Очистка строки от лишних символов
-                let sanitizedInput = sanitizeDateInput(inputStringDate)
-
-                // Попытка распарсить дату с использованием предустановленных форматов
-                for format in predefinedFormats {
-                    if let date = dateFormattingService.parse(sanitizedInput, using: format) {
-                        print("✅ Successfully parsed date: \(date) from input: \(sanitizedInput)")
-                        return date
-                    }
-                }
-
-                // Если все форматы не подошли, запрос формата у пользователя
-                print("❌ Could not parse date: \(sanitizedInput)")
-                let inputFormat = requestString(text: "Enter the date format (e.g., dd.MM.yyyy HH:mm): ")
-                if let date = dateFormattingService.parse(sanitizedInput, using: .custom(inputFormat)) {
-                    print("✅ Successfully parsed date with custom format: \(date)")
-                    return date
-                } else {
-                    print("❌ Invalid date or format. Please try again.")
-                }
-            } else {
-                print("❌ Input error. Please try again.")
+            writeOutput("\(text): ")
+            let input = try readRequiredLine()
+            for format in predefinedFormats {
+                if let date = dateFormattingService.parse(input, using: format) { return date }
             }
+            writeLine(localization(.dateNotParsed))
+            let format = try requestString(text: localization(.dateFormatPrompt))
+            if let date = dateFormattingService.parse(input, using: .custom(format)) { return date }
+            writeLine(localization(.invalidDateFormat))
         }
     }
 
-    /// Cleans the date input string, leaving only numbers, dots, colons, dashes, and spaces.
-    /// - Parameter input: The raw date string input by the user.
-    /// - Returns: A sanitized date string.
-    private func sanitizeDateInput(_ input: String) -> String {
-        let allowedCharacters = CharacterSet(charactersIn: "0123456789.-: ")
-        return input.filter { char in
-            guard let scalar = char.unicodeScalars.first else { return false }
-            return allowedCharacters.contains(scalar)
-        }
-    }
-
-    func requestString(text: String) -> String {
-        while true {
-            print("\(text): ", terminator: "")
-            if let input = readLine(strippingNewline: true) {
-                return input
-            } else {
-                print("Input error. Please try again.")
-            }
-        }
+    func requestString(text: String) throws -> String {
+        writeOutput("\(text): ")
+        return try readRequiredLine()
     }
 }

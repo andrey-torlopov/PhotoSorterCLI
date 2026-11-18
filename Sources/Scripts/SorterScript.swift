@@ -1,213 +1,87 @@
 import Foundation
 import PhotoSorterCore
 
-/// A script to sort and process files based on user-defined settings.
-class SorterScript {
+/// Configures Core's sorting operation and renders typed progress in the chosen language.
+final class SorterScript {
+    private let inputDialog: InputDialog
+    private var text: CLILocalization { inputDialog.localization }
 
-    /// Runs the sorting process by preparing input parameters and executing the sorter engine.
-    func run() async {
-        if let configure: SorterEngine.Configure = prepeareInputparameters() {
-            let startDate = CFAbsoluteTimeGetCurrent()
-            let sorterEngine = SorterEngine(configure: configure)
+    init(inputDialog: InputDialog = InputDialog()) { self.inputDialog = inputDialog }
 
-            do {
-                let result = try await sorterEngine.run(
-                    progressHandler: { progress in
-                        self.handleProgress(progress)
-                    },
-                    errorHandler: { error in
-                        self.handleError(error)
-                    }
-                )
-
-                let delta = CFAbsoluteTimeGetCurrent() - startDate
-                print(String(format: "🏁 Sorting completed. Time elapsed: %.2f seconds.", delta))
-                print("📊 Total files processed: \(result.processedCount)")
-                print("❌ Total errors: \(result.errors.count)")
-            } catch {
-                print("🔴 Critical error: \(error)")
-            }
-        } else {
-            print("🔴 Something went wrong!")
+    func run() async throws {
+        guard let configuration = try prepareInputParameters() else { return }
+        let started = CFAbsoluteTimeGetCurrent()
+        do {
+            let result = try await SorterEngine(configure: configuration, fixDateTool: FixDateTool(commandExecutor: CLICommandExecutor())).run(
+                progressHandler: { self.inputDialog.writeLine(CoreMessages(text: self.text).progress($0)) },
+                errorHandler: { self.inputDialog.writeLine(CoreMessages(text: self.text).fileError($0)) }
+            )
+            inputDialog.writeLine(text(.sortingFinished, CFAbsoluteTimeGetCurrent() - started))
+            inputDialog.writeLine(text(.processedTotal, result.processedCount))
+            inputDialog.writeLine(text(.errorsTotal, result.errors.count))
+        } catch {
+            inputDialog.writeLine(CoreMessages(text: text).failure(error))
         }
     }
 
-    /// Prepares the input parameters by prompting the user for necessary information.
-    /// - Returns: A `SorterEngine.Configure` instance if the user confirms, or `nil` if the process is canceled.
-    func prepeareInputparameters() -> SorterEngine.Configure? {
+    func prepareInputParameters() throws -> SorterEngine.Configure? {
         while true {
-            // Collect basic parameters
-            let inputFolder = requestFolderPath(prompt: "Enter the source folder path (folder must exist):")
-            let outputFolder = requestFolderPath(prompt: "Enter the destination folder path (folder must exist):")
-            let isRenameFileWithDateFormat = InputDialog().requestYesNo(
-                text: "Rename files to date format (e.g., 2024-01-02--12-31)? (Recommended)"
-            )
+            let input = try inputDialog.requestPath(text: text(.sourceFolderPrompt))
+            let output = try inputDialog.requestPath(text: text(.destinationFolderPrompt))
+            let rename = try inputDialog.requestYesNo(text: text(.renamePrompt))
+            inputDialog.writeLine(text(.dateExplanation))
+            let fixMetadata = try inputDialog.requestYesNo(text: text(.fixMetadataPrompt), defaultYes: false)
+            inputDialog.writeLine(text(.foldersExplanation))
+            let createFolders = try inputDialog.requestYesNo(text: text(.createFoldersPrompt))
+            let customDate = try requestCustomDate(fixMetadata: fixMetadata)
+            let deleteOriginals = try inputDialog.requestYesNo(text: text(.deletePrompt), defaultYes: false)
 
-            // Metadata and folder structure preferences
-            print("ℹ️ You can either automatically fix creation/modification dates or specify a custom date manually.")
-            let isFixMetadata = InputDialog().requestYesNo(
-                text: "Fix file metadata based on content creation date? (Recommended)",
-                defaultYes: false
-            )
-            print("ℹ️ You can choose whether to create a folder hierarchy (Year-Month) and separate photos/videos.")
-            let isMakeFolderStructure = InputDialog().requestYesNo(
-                text: "Create a folder structure in the destination folder? (Recommended)"
-            )
+            inputDialog.writeLine("---")
+            inputDialog.writeLine(text(.confirmSettings))
+            inputDialog.writeLine(text(.sourceFolderSetting, input))
+            inputDialog.writeLine(text(.destinationFolderSetting, output))
+            setting(.renameSetting, enabled: rename)
+            setting(.fixMetadataSetting, enabled: fixMetadata)
+            setting(.foldersSetting, enabled: createFolders)
+            setting(.deleteSetting, enabled: deleteOriginals)
+            setting(.forceDateSetting, enabled: customDate != nil)
+            inputDialog.writeLine(text(.customDateSetting, customDate.map(text.date) ?? text(.notSet)))
+            inputDialog.writeLine("---")
+            guard try inputDialog.requestYesNo(text: text(.startPrompt)) else { continue }
 
-            // Request custom date if needed
-            let (isForceUpdateDate, customDate) = getCustomDate(isFixMetadata: isFixMetadata)
-
-            // Final option to remove original files
-            let isRemoveOriginalFile = InputDialog().requestYesNo(
-                text: "Remove original files after processing?",
-                defaultYes: true
-            )
-
-            // Confirm and validate settings
-            if confirmSettings(
-                inputFolder: inputFolder,
-                outputFolder: outputFolder,
-                isRenameFileWithDateFormat: isRenameFileWithDateFormat,
-                isFixMetadata: isFixMetadata,
-                isMakeFolderStructure: isMakeFolderStructure,
-                isForceUpdateDate: isForceUpdateDate,
-                customDate: customDate,
-                isRemoveOriginalFile: isRemoveOriginalFile
-            ) {
-                // Build options based on user settings.
-                // В Core 0.0.4 опции .forceUpdateDate и .deleteOriginals удалены:
-                // - форсирование конкретной даты теперь задаётся через .concreteDate
-                //   (наличие даты включает форс и переопределяет .fixMetadata),
-                // - move/copy оригиналов - через .disposition (.move / .keepOriginal).
-                var options: SorterEngine.Options = []
-                if isRenameFileWithDateFormat { options.insert(.renameFiles) }
-                if isFixMetadata { options.insert(.fixMetadata) }
-                if isMakeFolderStructure { options.insert(.createFolders) }
-
-                // Use the new builder API
-                return SorterEngine.Configure.builder(
-                    input: URL(fileURLWithPath: inputFolder),
-                    output: URL(fileURLWithPath: outputFolder)
-                )
+            var options: SorterEngine.Options = []
+            if rename { options.insert(.renameFiles) }
+            if fixMetadata { options.insert(.fixMetadata) }
+            if createFolders { options.insert(.createFolders) }
+            return SorterEngine.Configure.builder(input: URL(fileURLWithPath: input), output: URL(fileURLWithPath: output))
                 .options(options)
-                .disposition(isRemoveOriginalFile ? .move : .keepOriginal)
+                .disposition(deleteOriginals ? .move : .keepOriginal)
                 .concreteDate(customDate)
                 .build()
-            }
         }
     }
 
-    /// Prompts the user to enter a folder path with a specific message.
-    /// - Parameter prompt: The text to display in the dialog.
-    /// - Returns: The folder path entered by the user.
-    private func requestFolderPath(prompt: String) -> String {
-        InputDialog().requestPath(text: prompt)
+    private func setting(_ message: CLIMessage, enabled: Bool) {
+        inputDialog.writeLine("\(enabled ? "✅" : "🔴") \(text(message, text(enabled ? .yes : .no)))")
     }
 
-    /// Displays a confirmation dialog summarizing the settings.
-    /// - Parameters: Various configuration options to summarize.
-    /// - Returns: `true` if the user confirms the settings, `false` otherwise.
-    private func confirmSettings(
-        inputFolder: String,
-        outputFolder: String,
-        isRenameFileWithDateFormat: Bool,
-        isFixMetadata: Bool,
-        isMakeFolderStructure: Bool,
-        isForceUpdateDate: Bool,
-        customDate: Date?,
-        isRemoveOriginalFile: Bool
-    ) -> Bool {
-        print("---\n\n")
-        print("Confirm the following settings:")
-        print("✅ Source folder: \(inputFolder)")
-        print("✅ Destination folder: \(outputFolder)")
-        print("\(isRenameFileWithDateFormat ? "✅" : "🔴") Rename files to date format: \(isRenameFileWithDateFormat ? "YES" : "NO")")
-        print("\(isFixMetadata ? "✅" : "🔴") Fix metadata (creation/modification dates): \(isFixMetadata ? "YES" : "NO")")
-        print("\(isMakeFolderStructure ? "✅" : "🔴") Create folder structure in destination: \(isMakeFolderStructure ? "YES" : "NO")")
-        print("\(isRemoveOriginalFile ? "✅" : "🔴") Remove original files after processing: \(isRemoveOriginalFile ? "YES" : "NO")")
-        print("\(isForceUpdateDate ? "✅" : "🔴") Force custom date: \(isForceUpdateDate ? "YES" : "NO")")
-        print("\(customDate != nil ? "✅" : "🔴") Custom date: \(customDate?.description ?? "Not set")")
-        print("---\n\n")
-
-        return InputDialog().requestYesNo(text: "Start with these settings?")
-    }
-
-    /// Prompts the user to specify a custom date for sorting files, if applicable.
-    /// - Parameter isFixMetadata: A flag indicating whether metadata should be fixed. If `true`, the method returns default values.
-    /// - Returns: A tuple containing a flag indicating if a custom date is forced and the custom date itself.
-    private func getCustomDate(isFixMetadata: Bool) -> (isForceUpdate: Bool, customDate: Date?) {
-        guard !isFixMetadata else {
-            print("❌ Metadata fixing is enabled. Skipping custom date selection.")
-            return (false, nil)
+    private func requestCustomDate(fixMetadata: Bool) throws -> Date? {
+        guard !fixMetadata else {
+            inputDialog.writeLine(text(.customDateSkippedMetadata))
+            return nil
         }
-
         while true {
-            let isSetCustomDate = InputDialog().requestYesNo(
-                text: "Would you like to set a custom creation/modification date for all files?",
-                defaultYes: false
-            )
-
-            if !isSetCustomDate {
-                print("ℹ️ Custom date selection was skipped.")
-                break
+            guard try inputDialog.requestYesNo(text: text(.customDatePrompt), defaultYes: false) else {
+                inputDialog.writeLine(text(.customDateSkipped))
+                return nil
             }
-
-            let date = InputDialog().requestDate(
-                text: "Please specify the date in the format dd.MM.yyyy HH:mm: "
-            )
-
-            print("You entered the date: \(date)")
-            let isCorrect = InputDialog().requestYesNo(
-                text: "Do you confirm this date?",
-                defaultYes: true
-            )
-
-            if isCorrect {
-                print("✅ Custom date confirmed: \(date).")
-                return (true, date)
-            } else {
-                print("❌ Custom date entry was rejected. Prompting again...")
+            let date = try inputDialog.requestDate(text: text(.customDateInput))
+            inputDialog.writeLine(text(.dateEntered, text.date(date)))
+            if try inputDialog.requestYesNo(text: text(.confirmDatePrompt)) {
+                inputDialog.writeLine(text(.dateConfirmed, text.date(date)))
+                return date
             }
-        }
-
-        return (false, nil)
-    }
-
-    /// Handles progress updates from the sorter engine
-    private func handleProgress(_ progress: SorterProgress) {
-        switch progress {
-        case .started:
-            print("🚀 Sorting started...")
-        case .folderCreated(let name):
-            print("📂 Folder created: \(name)")
-        case .fileProcessed(let sourcePath, let targetPath):
-            print("✅ File processed: \(sourcePath) → \(targetPath)")
-        case .fileSkipped(let path):
-            print("⏭️ File skipped (already dated): \(path)")
-        case .completed(let count):
-            print("🏁 Sorting completed. Files processed: \(count)")
-        }
-    }
-
-    /// Handles errors from the sorter engine
-    private func handleError(_ error: FileProcessingError) {
-        switch error {
-        case .invalidDate(let filePath, let dateString):
-            print("❌ Invalid date in file: \(filePath) - \(dateString)")
-        case .missingDateComponents(let filePath):
-            print("❌ Missing date components: \(filePath)")
-        case .moveFailed(let source, let destination, let reason):
-            print("❌ Move failed: \(source) → \(destination): \(reason)")
-        case .copyFailed(let source, let destination, let reason):
-            print("❌ Copy failed: \(source) → \(destination): \(reason)")
-        case .dateUpdateFailed(let fileURL, let reason):
-            print("❌ Date update failed: \(fileURL.path): \(reason)")
-        case .cantFixDate(let fileURL, let reason):
-            print("❌ Can't fix date: \(fileURL.path): \(reason)")
-        case .metadataError(let filePath, let error):
-            print("❌ Metadata error: \(filePath): \(error)")
-        case .creationDateSetFailed(let filePath, let reason):
-            print("❌ Creation date set failed: \(filePath): \(reason)")
+            inputDialog.writeLine(text(.dateRejected))
         }
     }
 }
